@@ -1,0 +1,66 @@
+-- For SQL Server editions prior to 2019 without string_agg(), this works for me.
+
+-- Scenario: Two tables, the parent (NMI) describes core characteristics for a site with an electricity meter, the child
+-- contains 0 or more related notes (NMINotes).
+
+create table NMI (
+	RowID int identity not null
+	, NMI varchar(10) not null
+	primary key
+	, [Checksum] char(1) not null
+	, InactiveFlag bit default 0
+	, RegionID varchar(10) default 'SA1'
+	, NetworkProviderID int 
+	constraint fk_NMINetworkProvider foreign key
+	references dbo.NetworkChargesDistributor ([RowID])
+	, TemplateID int
+	, DLFCode varchar(15)
+	constraint fk_NMI_DLFCode foreign key
+	references dbo.DLFCodes (DLFCode)
+	, TNICode varchar(15)
+	constraint fk_NMI_TNICode foreign key
+	references dbo.TNICodes (TNICode)
+	, [Classification] varchar(10)
+);
+
+create table NMINotes (
+	RowID int identity not null
+	primary key,
+	NMIID int not null
+	constraint fk_NotesNMIID foreign key
+	references NMI (RowID),
+	Note varchar(2000) not null
+);
+
+-- Then this query will select the NMIs with their 0 to many notes concatenated:
+
+select
+	  a.RowID
+	, a.NMI
+	, a.[Checksum]
+	, a.InactiveFlag
+	, a.RegionID
+	, a.NetworkProviderID
+	, a.TemplateID
+	, a.DLFCode
+	, a.TNICode
+	, a.[Classification]
+	, b.Note
+from
+	dbo.NMI a
+	left outer join (
+		select
+			NMIID,
+			(
+				select
+					Note + ' ' [data()]
+				from
+					NMINotes l
+				where
+					l.NMIID = n.NMIID
+				for	
+					xml path('')
+			) Note
+		from
+			NMINotes n
+	) b on b.NMIID = a.RowID
